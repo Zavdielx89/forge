@@ -126,7 +126,59 @@ Instead of planning all atoms upfront or one feature at a time, Forge plans in *
 - Per 24 hours (multiple windows): ~30-50 atoms
 - Per week: ~150-250 atoms
 
-## Execution Pipeline
+## Execution Infrastructure
+
+### Cron-Driven Orchestration
+Forge execution is powered by a **cron job** that fires every 3 minutes. This is the core resilience mechanism:
+
+- **Created automatically** when the user runs `forge approve` — not pre-installed
+- **Survives compaction** — cron is OpenClaw infrastructure, not session state
+- **Self-healing** — if the main session loses context, cron keeps dispatching workers
+- **Reports to main** — uses `sessions_send` to push status updates back to the human's session
+
+When implementing `forge approve`, create the cron with:
+```
+cron add:
+  name: "forge-executor"
+  schedule: { kind: "every", everyMs: 180000 }
+  sessionTarget: "isolated"
+  payload: { kind: "agentTurn", message: "<executor prompt>", timeoutSeconds: 420 }
+```
+
+The executor prompt must include:
+1. The main session key (for `sessions_send` callbacks)
+2. The project root path
+3. The full execution state machine (steps below)
+4. The atom execution order with completion status
+5. Feature boundary map (which atom is last per feature)
+
+When implementing `forge pause`, disable the cron. `forge resume` re-enables it.
+When implementing `forge status`, read state.json and format a progress report.
+
+### Cron Executor State Machine
+Each cron tick follows this sequence:
+1. **Read state.json** — ground truth for pipeline state
+2. **Check status** — paused/awaiting-integration/rate-limited/executing
+3. **Check active workers** — if worker running, exit quietly (no spam)
+4. **Verify last atom** — check git log, update completedAtoms
+5. **Feature boundary check** — if last atom of feature, run tests, notify main, pause for integration
+6. **Determine next atom** — from queue, or completion if done
+7. **Confidence gate** — score 4 dimensions, escalate LOW to human via main session
+8. **Spawn worker** — sub-agent with full vertical context
+9. **Status update** — brief progress line to main session
+
+### Main Session Integration
+The cron executor communicates with the human via `sessions_send` to the main session:
+- **Progress updates**: After spawning each worker
+- **Feature gates**: "Feature X complete, tests passing. Continue or test manually?"
+- **Decision needed**: LOW confidence gate or worker failure
+- **Completion**: All atoms done, project complete
+
+The main session handles:
+- `forge continue` / `forge approve` — resume after feature gate
+- `forge decide <id> <answer>` — answer confidence gate questions
+- `forge pause` / `forge resume` — manual pipeline control
+- `forge status` — on-demand progress report
 
 ### Per-Atom Flow
 ```
@@ -140,10 +192,10 @@ CONFIDENCE GATE → SPAWN WORKER → BUILD → COMPILE → TEST → COMMIT → D
 ### Per-Feature Gate
 After all atoms in a feature complete:
 - Run full test suite
-- Start the application (if applicable)
-- Verify feature works end-to-end
-- Create PR for the feature
-- Continue to next feature automatically (no human approval needed)
+- Notify main session with results
+- Set status to 'awaiting-integration'
+- **Wait for human** to say `forge continue` or `forge skip-test`
+- Human can optionally test manually before continuing
 
 ### Per-Epic Gate
 After all features in an epic complete:
@@ -271,6 +323,40 @@ No decisions needed. Pipeline flowing.
 8. **Blockers** — Only genuine failures
 
 Everything else is autonomous.
+
+## Command Implementation (Main Session)
+
+When the user issues a forge command in the main session, handle it directly:
+
+### `forge continue` / `forge approve`
+1. Read state.json
+2. If status is 'awaiting-integration': set status to 'executing', write state.json
+3. Reply: "Forge resumed. Next atom will be picked up within 3 minutes."
+
+### `forge pause`
+1. Read state.json, set status to 'paused', write state.json
+2. Reply with current progress summary
+
+### `forge resume`
+1. Read state.json, set status to 'executing', write state.json
+2. Reply: "Forge resumed."
+
+### `forge status`
+1. Read state.json
+2. Format progress report: atoms done/total, current work, features/epics done, queue remaining
+
+### `forge decide <id> <answer>`
+1. Read state.json, find the pending decision
+2. Update the relevant atom/feature file with the answer
+3. Set status back to 'executing', write state.json
+
+### `forge skip <atom-id>`
+1. Add atom to completedAtoms (mark as skipped), advance to next
+2. Write state.json
+
+### `forge retry <atom-id>`
+1. Set the atom as currentWork, status to 'executing'
+2. Write state.json — cron will pick it up
 
 ## Quick Start
 
