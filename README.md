@@ -1,267 +1,310 @@
-# Forge - Multiscale AI Software Factory
+# Forge - Multiscale AI Software Factory 🔥
 
 > *From the macroscopic vision down to the atomic unit of work — then back up to working software.*
 
-Forge is an OpenClaw skill that decomposes software projects across multiple scales (Project → Epics → Features → Atoms) then executes those atoms with AI workers that have full vertical context through every scale.
-
-## What Forge Does
-
-- **Decomposes projects** into manageable atomic units of work
-- **Provides context stacks** so AI workers understand how their work fits into the bigger picture
-- **Manages execution pipelines** with automated build/test/commit cycles
-- **Gates integration** at feature and epic boundaries
-- **Keeps humans in the loop** for architectural and UX decisions at appropriate scales
-
-## The Four Scales
-
-1. **PROJECT** (1) - The macroscopic vision
-   - "A recipe sharing app with social features"
-   - Output: `project.md`
-
-2. **EPICS** (3-8) - Major structural segments  
-   - "Authentication System" / "Recipe Management"
-   - Output: `epics/01-auth.md`, etc.
-
-3. **FEATURES** (3-6 per epic) - Individual capabilities
-   - "Email/password login" / "OAuth with Google"
-   - Output: `epics/01-auth/features/01-email.md`
-
-4. **ATOMS** (3-10 per feature) - Smallest executable units
-   - "Create users table migration"
-   - "Implement password hashing service"
-   - Output: `epics/01-auth/features/01-email/atoms/001-users-table.md`
+Forge is an [OpenClaw](https://github.com/openclaw/openclaw) skill that decomposes software projects across multiple scales (Project → Epics → Features → Atoms) then executes those atoms autonomously with AI worker sub-agents. Planning is interactive. Execution is autonomous.
 
 ## How It Works
 
-### Context Stack
-Every AI worker receives the full vertical context:
-- **project.md** - What the app is, tech stack, conventions
-- **epic.md** - How this system fits into the larger architecture
-- **feature.md** - What user value this capability provides
-- **atom.md** - Exact implementation task
-
-### Human-in-the-Loop
-- **Project level**: Goals, constraints, tech stack choices
-- **Epic level**: Architecture decisions, integration patterns
-- **Feature level**: UX workflows, business logic decisions  
-- **Atom level**: Implementation ambiguities (rare)
-
-### Execution Pipeline
 ```
-Atom → Worker → Build → Test → Commit → Next Atom
-     ↓
-   [2 auto-retries for compilation/test failures]
-     ↓
-   [Escalate if still failing]
+User: "Build a measurement calculator"
+  → Forge asks clarifying questions (batched)
+  → Decomposes into Epics → Features → Atoms
+  → User approves once
+  → Autonomous execution begins
+  → Progress updates arrive via Slack/Telegram/etc.
+  → Pauses at feature boundaries for integration testing
+  → Naps during token cooldowns, auto-resumes
+  → Project complete.
 ```
 
-## Getting Started
+**Target: 80% unsupervised execution.** Humans make architectural and UX decisions upfront. Machines execute.
 
-### Installation
-Forge is an OpenClaw skill. Once installed in your workspace, use:
+## The Four Scales
+
+| Scale | Count | What | Human Input |
+|-------|-------|------|-------------|
+| **Project** | 1 | The macroscopic vision | Goals, constraints, tech stack |
+| **Epics** | 3-8 | Major structural segments | Priority, scope, integration points |
+| **Features** | 3-6 per epic | Individual capabilities | UX decisions, behavior, edge cases |
+| **Atoms** | 3-10 per feature | Smallest executable units | Only if confidence gate triggers |
+
+### Vertical Context Stack
+Every AI worker receives exactly 4 files — narrow but deep:
+- `project.md` — what the app is
+- `epic.md` — how this system fits
+- `feature.md` — what this capability does
+- `atom.md` — exact task to implement
+
+## Key Features
+
+### Horizon-Based Planning
+Instead of planning everything upfront or one feature at a time, Forge plans in time horizons:
+
+```
+forge plan 5 hours    → estimates ~8-12 atoms
+forge plan 3 days     → estimates ~100-150 atoms
+forge plan 1 week     → estimates ~200+ atoms
+```
+
+All clarifying questions are batched upfront. One approval. Then autonomous execution.
+
+### Confidence Gate
+Before each atom, the orchestrator scores 4 dimensions:
+
+1. **Project alignment** — does this connect to the vision?
+2. **Epic fit** — does it fit the system architecture?
+3. **Feature coherence** — does it implement the spec?
+4. **Implementation clarity** — are requirements unambiguous?
+
+Each: HIGH / MEDIUM / LOW
+
+- **All HIGH** → Execute immediately
+- **Any MEDIUM** → Execute with notes logged
+- **Any LOW** → Stop. Ask the human. Resume after answer.
+
+### Cron-Driven Orchestration (Self-Healing)
+Execution is powered by an OpenClaw cron job that fires every 3 minutes:
+
+- **Survives session compaction** — cron is infrastructure, not session state
+- **Self-healing** — if the main session loses context, cron keeps dispatching workers
+- **Reports to main** — uses `sessions_send` to push status updates to the human's chat
+- **Created automatically** by `forge approve` — each project gets its own cron
+
+```
+┌─────────────────────────────────────────────┐
+│  Cron (every 3 min)                         │
+│  ├─ Read state.json                         │
+│  ├─ Check for active workers                │
+│  ├─ Verify last atom committed              │
+│  ├─ Feature/epic boundary gates             │
+│  ├─ Confidence gate on next atom            │
+│  ├─ Spawn worker sub-agent                  │
+│  └─ Status update → main session → human    │
+└─────────────────────────────────────────────┘
+```
+
+### Integration Gates
+
+Feature and epic boundaries trigger gates before continuing:
+
+**Gate Types:**
+- `auto` — unit tests + build only, no pause (for backend/engine code with no UI)
+- `manual` — full integration test plan presented to human, execution pauses
+
+At **manual gates**, the human receives:
+- Test scenarios for the current feature (3-6 specific steps)
+- Test scenarios for all features in the epic (at epic boundaries)
+- Cross-feature interaction tests
+- Regression checklist for previously completed features
+- Say `forge continue` to resume
+
+### Token Budget Management
+- Tracks consumption per rolling 5-hour window (Claude Max)
+- When rate-limited: pauses, sets cron to auto-resume when window resets
+- Won't start an atom that can't finish in remaining budget
+- Runs 24/7 with naps — not 9-to-5 with hard stops
+
+## Commands
 
 ```bash
-forge new                    # Start a new project
-forge status                 # Check current progress
-forge plan                   # Review current decomposition
-forge approve               # Approve and proceed to next level
+# Project Lifecycle
+forge new                         # Start a new project (intake)
+forge plan <horizon>              # Plan atoms for a time horizon
+forge approve                     # Approve plan, begin execution
+forge status                      # Show current progress
+
+# Execution Control
+forge pause                       # Pause autonomous execution
+forge resume                      # Resume execution
+forge continue                    # Continue past integration gate
+forge skip <atom-id>              # Skip a stuck atom
+forge retry <atom-id>             # Retry a failed atom
+
+# Decision Support
+forge decide <id> <answer>        # Answer a pending decision
+
+# Information
+forge history                     # Show what was done today
+forge budget                      # Show remaining token capacity
 ```
 
-### Example Workflow
+## Installation
 
-1. **Project Intake**
-   ```
-   User: "I want to build a recipe sharing app"
-   → forge new
-   → Intake conversation (goals, tech stack, MVP scope)
-   → Creates project.md
-   ```
+### As an OpenClaw Skill
 
-2. **Epic Decomposition**  
-   ```
-   → forge plan  # Shows proposed epic breakdown
-   → Human reviews and approves epic boundaries
-   → forge approve
+1. Clone into your OpenClaw workspace skills directory:
+   ```bash
+   cd ~/.openclaw/workspace/skills
+   git clone https://github.com/yourusername/forge.git
    ```
 
-3. **Feature Decomposition**
-   ```
-   → forge plan  # Shows features for first epic
-   → Human reviews UX workflows and decisions
-   → forge approve
+2. Restart OpenClaw:
+   ```bash
+   openclaw gateway restart
    ```
 
-4. **Atom Execution**
+3. Verify it loaded:
+   ```bash
+   openclaw status
+   # Should show: forge ✓ ready
    ```
-   → Forge spawns workers to implement atoms
-   → Automated build/test/commit cycle
-   → Progress updates via cron
-   → Integration gates at feature boundaries
+
+4. Start building:
    ```
+   > Let's build a calculator app
+   ```
+
+### Requirements
+- [OpenClaw](https://github.com/openclaw/openclaw) installed and configured
+- A messaging channel (Slack, Telegram, etc.) for progress updates
+- Claude API access (Claude Max recommended for autonomous execution)
 
 ## Directory Structure
 
 ```
 forge/
-├── SKILL.md               # OpenClaw skill definition
+├── SKILL.md               # OpenClaw skill definition (the brain)
 ├── README.md              # This file
-├── .gitignore            # Git ignore patterns
-├── templates/            # Plan file templates
+├── templates/             # Plan file templates
 │   ├── project.md
 │   ├── epic.md
 │   ├── feature.md
 │   ├── atom.md
 │   └── decision.md
-├── prompts/              # Sub-agent system prompts
+├── prompts/               # Sub-agent system prompts
 │   ├── planner-project.md
 │   ├── planner-epic.md
 │   ├── planner-feature.md
 │   ├── worker.md
 │   └── reviewer.md
-├── lib/                  # Bash helper libraries
-│   ├── state.sh          # State management functions
-│   └── queue.sh          # Task queue management
-└── projects/            # Where project data lives (gitignored)
+├── lib/                   # Helper libraries
+│   ├── state.sh
+│   └── queue.sh
+└── projects/              # Project data (gitignored)
     └── {project-id}/
         ├── project.md
-        ├── state.json
+        ├── state.json     # Single source of truth
         ├── epics/
-        │   ├── 01-auth/
-        │   │   ├── epic.md
-        │   │   ├── features/
-        │   │   │   ├── 01-email/
-        │   │   │   │   ├── feature.md
-        │   │   │   │   └── atoms/
-        │   │   │   │       ├── 001-table.md
-        │   │   │   │       └── ...
-        │   │   │   └── ...
-        │   │   └── ...
-        │   └── ...
+        │   └── {nn}-{name}/
+        │       ├── epic.md
+        │       └── features/
+        │           └── {nn}-{name}/
+        │               ├── feature.md
+        │               └── atoms/
+        │                   └── {nnn}-{name}.md
         └── reports/
-            └── daily/
 ```
 
-## Key Files
+## State Machine
 
-### Templates (`templates/`)
-Define the standard format for plans at each scale. The **atom template** is most critical - it must include:
-- Full context stack references
-- Exact implementation details
-- Acceptance criteria  
-- Required tests
-- Clear boundaries
+```
+planning → approved → executing ←──────────────┐
+                         │                      │
+                    ┌────┴────┐                 │
+                    ▼         ▼                 │
+            awaiting-     needs-        forge continue /
+            integration   decision      forge decide
+                    │         │                 │
+                    └────┬────┘                 │
+                         └──────────────────────┘
+                         
+executing → rate-limited → (auto-resume after cooldown)
+executing → complete (all atoms done)
+executing → paused (forge pause) → executing (forge resume)
+```
 
-### System Prompts (`prompts/`)
-Instructions for AI sub-agents:
-- **Planner prompts** - Decompose one scale into the next
-- **Worker prompt** - Execute an atom with context stack
-- **Reviewer prompt** - Verify integration at feature/epic boundaries
-
-### State Management (`lib/`)
-Bash functions for:
-- Reading/writing JSON state files
-- Managing atom queue status
-- Finding next ready work
-- Tracking dependencies and completion
-
-## State Management
-
-All project state is stored in JSON files alongside markdown plans:
-
+### state.json Schema
 ```jsonc
-// project/state.json
 {
-  "projectId": "recipe-app",
-  "status": "executing", 
+  "projectId": "measure-calc",
+  "status": "executing",           // See state machine above
   "scales": {
-    "project": "approved",
-    "epics": { "total": 5, "approved": 2 },
-    "atoms": { "total": 47, "done": 12, "running": 1 }
+    "epics": { "total": 4, "done": 2 },
+    "features": { "total": 11, "done": 9 },
+    "atoms": { "total": 26, "done": 21, "running": 1 }
   },
+  "completedAtoms": ["E01-F01-001", ...],
+  "completedFeatures": ["E01-F01", ...],
+  "completedEpics": ["01-scaffolding", ...],
   "currentWork": {
-    "epic": "01-auth",
-    "atom": "003-login-endpoint", 
-    "workerSession": "sub-abc123"
+    "atom": "E04-F01-001",
+    "workerLabel": "worker-E04-F01-001"
+  },
+  "featureBoundaries": {           // Last atom → feature ID
+    "E01-F01-003": "E01-F01"
+  },
+  "epicBoundaries": {              // Last atom → epic ID
+    "E02-F04-003": "02-engine"
+  },
+  "gateType": {                    // auto = no pause, manual = pause + test plan
+    "E01-F01": "auto",
+    "E04-F01": "manual"
   }
 }
 ```
 
-## Commands Reference
-
-```bash
-# Project Management
-forge new                    # Create new project
-forge status                 # Show current state
-forge plan                   # Show current decomposition level
-forge approve                # Approve and advance to next level
-
-# Queue Management  
-forge pause                  # Pause execution
-forge resume                 # Resume execution
-forge skip <atom-id>         # Skip stuck atom
-forge retry <atom-id>        # Retry failed atom
-
-# Information
-forge history               # Show recent progress
-forge budget               # Show remaining capacity
-forge decide <id> <answer> # Answer pending decision
-```
-
 ## Sub-Agent Architecture
 
-Forge orchestrates multiple types of AI sub-agents:
-
-### Planner Agents
-- **Project Planner**: Breaks project into epics
-- **Epic Planner**: Breaks epic into features  
-- **Feature Planner**: Breaks feature into atoms
-
-### Execution Agents
-- **Worker**: Implements individual atoms
-- **Reviewer**: Verifies integration at boundaries
-
-### Communication Flow
 ```
-Main Agent ←→ Human (decisions, progress)
-     ↓
-Planner Agents (decomposition)
-     ↓
-Worker Agents (implementation) 
-     ↓
-Reviewer Agents (integration gates)
+┌─────────────────────────────────────────────────────┐
+│  Main Session (human conversation)                   │
+│  ├─ Receives progress updates from cron              │
+│  ├─ Handles forge commands                           │
+│  └─ Integration gate decisions                       │
+├──────────────────────────────────────────────────────┤
+│  Cron Executor (isolated, every 3 min)               │
+│  ├─ Reads state.json                                 │
+│  ├─ Runs confidence gates                            │
+│  ├─ Spawns workers                                   │
+│  ├─ Detects boundaries                               │
+│  └─ sessions_send → main session                     │
+├──────────────────────────────────────────────────────┤
+│  Worker Sub-Agents (isolated, per atom)              │
+│  ├─ Receive full context stack                       │
+│  ├─ Implement → test → commit                        │
+│  └─ Auto-retry up to 2x on failure                   │
+├──────────────────────────────────────────────────────┤
+│  Planner Sub-Agents (isolated, per decomposition)    │
+│  └─ Break one scale into the next                    │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## Design Principles
 
-1. **Files over databases** - Everything is markdown and JSON
-2. **Vertical context, not horizontal** - Workers see their full stack
-3. **Humans refine, machines execute** - Human decisions at right scale
-4. **Fail small** - Atom failures don't cascade
-5. **Compile-test-commit** - Every atom leaves working code
-6. **Budget-aware** - Track and respect Claude time limits
-7. **Resumable** - Everything persisted to disk
+1. **Files over databases** — everything is markdown and JSON on disk
+2. **Vertical context, not horizontal** — workers see their full stack, nothing else
+3. **Humans refine, machines execute** — decisions at the right scale only
+4. **Fail small** — atom failures don't cascade
+5. **Compile-test-commit** — every atom leaves working code
+6. **Self-healing** — cron-driven, survives session loss
+7. **Resumable** — everything persisted to state.json
+8. **Budget-aware** — track and respect token limits, nap and resume
 
-## Success Metrics
+## Example: MeasureCalc
 
-- **End-to-end completion** without human coding
-- **Atomic granularity** - each atom ≤30 minutes Claude time
-- **Quality gates** - compile/test/commit at every atom
-- **Appropriate human involvement** - decisions at right scale only
-- **Budget management** - no overruns, predictable capacity
+Forge's first test project — a Vue 3 measurement calculator with fraction math, unit conversions, and PEMDAS expression evaluation:
+
+- **4 epics**: Scaffolding, Engine, Calculator UI, Integration
+- **11 features**: From Vite setup to keyboard shortcuts
+- **26 atoms**: Each independently testable and committable
+- **~2 hours** from approval to 21/26 atoms complete (autonomous)
 
 ## Contributing
 
-To extend Forge:
+Forge is early. Things to improve:
+- Parallel atom execution (currently sequential)
+- Smarter token budget estimation
+- Better error recovery patterns
+- More gate types (automated E2E, visual regression)
+- Multi-project support
 
-1. **Templates** - Modify templates to fit your project patterns
-2. **Prompts** - Adjust system prompts for your architectural style  
-3. **State management** - Extend JSON schemas for additional tracking
-4. **Integration** - Add hooks for your CI/CD, notification systems
+PRs welcome. File issues for bugs or feature requests.
 
 ## License
 
-Part of the OpenClaw ecosystem. See main OpenClaw license.
+MIT. Part of the [OpenClaw](https://github.com/openclaw/openclaw) ecosystem.
 
 ---
 
-*Forge: Multiscale software construction. From vision to atoms and back to working code.*
+*Forge: Multiscale software construction. From vision to atoms and back to working code.* 🔥
