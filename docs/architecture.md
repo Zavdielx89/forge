@@ -60,7 +60,7 @@ Inspired by multiscale materials modeling: you can't simulate a bridge by modeli
 
 A typical project: 5 epics × 4 features × 6 atoms = **120 atoms**.
 At ~10-15 min Claude time per atom: **~20-30 hours** of execution.
-At 5 hours/day subscription: **~4-6 days** of background churning to build a full app.
+With rolling 5-hour token windows (reset after cooldown): Forge runs continuously — executing during active windows, napping during cooldowns, auto-resuming when tokens refresh. A full app in **~3-5 days** of autonomous churning.
 
 ## 3. The Decomposition Pipeline
 
@@ -398,9 +398,17 @@ forge/projects/{project-id}/
     }
   ],
   "budget": {
-    "atomsCompletedToday": 4,
+    "tokenWindow": {
+      "estimatedTokensUsed": 850000,
+      "windowStart": "2026-02-17T10:00:00Z",
+      "windowEnds": "2026-02-17T15:00:00Z",
+      "rateLimited": false,
+      "resumeAt": null
+    },
+    "atomsCompletedThisWindow": 4,
+    "estimatedAtomsPerWindow": 8,
     "estimatedAtomsRemaining": 35,
-    "estimatedDaysRemaining": 5
+    "estimatedWindowsRemaining": 5
   },
   "git": {
     "repo": "/home/zavdielx/code/recipe-app",
@@ -601,7 +609,7 @@ forge budget                 — Show remaining capacity
 
 5. **Compile-test-commit at every atom.** No "big bang" integration. Every atom leaves the project in a buildable, testable state.
 
-6. **Budget-aware.** Forge knows how much Claude time is left and plans accordingly. It won't start an atom it can't finish.
+6. **Budget-aware.** Forge tracks token consumption per rolling 5-hour window. When rate-limited, it pauses and sets a cron job to auto-resume when the window resets. It runs 24/7 with naps, not 9-to-5 with hard stops.
 
 7. **Resumable.** Everything is serialized to disk. If OpenClaw restarts, Forge picks up exactly where it left off.
 
