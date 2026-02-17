@@ -1,16 +1,21 @@
+---
+name: forge
+description: Multiscale AI software factory. Use when the user wants to build a complete software application, create a new project from scratch, or says "forge" followed by a command. Decomposes projects into Epics, Features, and Atoms, then executes with AI workers using full vertical context.
+---
+
 # Forge - Multiscale AI Software Factory
 
 > *From the macroscopic vision down to the atomic unit of work — then back up to working software.*
 
 ## What This Skill Does
 
-Forge decomposes a software project across multiple scales (Project → Epics → Features → Atoms) then executes those atoms with AI workers that have full vertical context. Humans refine the plan at each level, ensuring precision increases as scope narrows.
+Forge decomposes a software project across multiple scales (Project → Epics → Features → Atoms) then executes those atoms autonomously with AI workers. Planning is interactive (human answers questions), execution is autonomous (runs until done or paused).
 
 ## When to Use Forge
 
 Activate when the user wants to:
 - Build a complete software application
-- Create a new project from scratch  
+- Create a new project from scratch
 - Says "build [something]" / "create [an app]" / "new project"
 - Says "forge [command]" explicitly
 - References an existing forge project
@@ -18,118 +23,155 @@ Activate when the user wants to:
 ## Command Set
 
 ```bash
-forge new                    # Start a new project (intake)
-forge status                 # Show current project status  
-forge plan                   # Show/review current plan at any scale
-forge approve                # Approve current decomposition level
-forge decide <id> <answer>   # Answer a pending decision
-forge pause                  # Pause execution
-forge resume                 # Resume execution  
-forge skip <atom-id>         # Skip a stuck atom
-forge retry <atom-id>        # Retry a failed atom
-forge history               # Show what was done today
-forge budget                # Show remaining capacity
+forge new                         # Start a new project (intake)
+forge plan <horizon>              # Plan atoms for a time horizon ("5 hours", "3 days", "1 week")
+forge status                      # Show current project status
+forge approve                     # Approve current plan batch and begin execution
+forge decide <id> <answer>        # Answer a pending decision
+forge pause                       # Pause autonomous execution
+forge resume                      # Resume autonomous execution
+forge skip <atom-id>              # Skip a stuck atom
+forge retry <atom-id>             # Retry a failed atom
+forge history                     # Show what was done today
+forge budget                      # Show remaining token capacity
 ```
 
-## Architecture Overview
+## The Two Phases
 
-### The Four Scales
+### Phase 1: PLANNING (Interactive)
 
-1. **PROJECT** (1) - The macroscopic vision
-   - "A recipe sharing app with social features"
+Human is actively involved. This is where all the thinking happens.
+
+1. **Intake** — User describes what to build. Forge asks 3-5 clarifying questions.
+2. **Decompose** — Project → Epics → Features (with human review at each level).
+3. **Set horizon** — User says "plan for 24 hours" / "plan for a week" / etc.
+4. **Feature clarification** — For each feature in the horizon batch, Forge asks clarifying questions. All questions are batched during planning, not during execution.
+5. **Atom generation** — Once all questions are answered, atoms are created for every feature in the batch.
+6. **Approve** — User reviews the full atom plan and approves once. This is the last required human touchpoint before execution begins.
+
+### Phase 2: EXECUTION (Autonomous)
+
+Human is hands-off. The system runs indefinitely until the batch is complete, paused, or blocked.
+
+1. Workers churn through atoms sequentially (or parallel when independent).
+2. Each atom: compile + unit test + commit.
+3. Feature boundary: integration test gate, PR created.
+4. Token window exhausted: Forge naps, sets cron to auto-resume when tokens refresh.
+5. **Only interrupts human for genuine blockers** (worker failed twice, external issue, low-confidence atom needing clarification).
+6. Runs until batch complete or user says `forge pause`.
+
+## The Four Scales
+
+1. **PROJECT** (1) — The macroscopic vision. "A recipe sharing app."
    - Human input: Goals, constraints, tech stack, MVP scope
-   - Output: project.md
 
-2. **EPICS** (3-8) - Major structural segments
-   - "Authentication System" / "Recipe Management"  
+2. **EPICS** (3-8) — Major structural segments. "Authentication System."
    - Human input: Priority, scope boundaries, integration points
-   - Output: epics/01-auth.md, etc.
 
-3. **FEATURES** (3-6 per epic) - Individual capabilities
-   - "Email/password login" / "OAuth with Google"
+3. **FEATURES** (3-6 per epic) — Individual capabilities. "Email/password login."
    - Human input: UX decisions, behavior, edge cases
-   - Output: epics/01-auth/features/01-email.md
 
-4. **ATOMS** (3-10 per feature) - Smallest executable units
-   - "Create users table migration"
-   - "Implement password hashing service"
-   - Human input: Clarify ambiguities only
-   - Output: epics/01-auth/features/01-email/atoms/001-users-table.md
+4. **ATOMS** (3-10 per feature) — Smallest executable units. "Create users table."
+   - Human input: Only if confidence gate triggers (see below)
 
 ### Context Stack
 
 Every worker receives the full vertical context:
 - project.md (what the app is)
 - epic.md (how this system fits)
-- feature.md (what this capability does)  
+- feature.md (what this capability does)
 - atom.md (exact task to implement)
 
-## Implementation Guide
+## Confidence Gate (Pre-Flight Check)
 
-### Command: forge new
+Before spawning a worker for each atom, the orchestrator performs an introspection step:
 
-1. Start intake conversation with user
-2. Create project brief (project.md)
-3. Initialize project state (state.json)
-4. Set status to "intake" → "planning"
+### Scoring
+Evaluate the atom against four dimensions:
+1. **Project alignment** — How well does this atom connect to the project vision?
+2. **Epic fit** — How well does it fit the epic's architecture and integration points?
+3. **Feature coherence** — How well does it implement the feature specification?
+4. **Implementation clarity** — How clear and unambiguous are the requirements?
 
-### Command: forge status  
+Each dimension: HIGH (clear, no issues) / MEDIUM (minor gaps) / LOW (vague or conflicting)
 
-Show current state from state.json:
-- Overall progress (atoms done/total)
-- Current work (epic/feature/atom)
-- Active worker sessions
-- Pending decisions
-- Budget remaining
+### Decision
+- **All HIGH** → Execute immediately. No human interruption.
+- **Any MEDIUM, no LOW** → Execute, but add concerns as notes in the worker prompt. Log the concern.
+- **Any LOW** → **STOP.** Ask the human clarifying questions. Update the atom plan with their answers. Re-score. Only execute when confidence is sufficient.
 
-### Command: forge plan
+### Why This Matters
+Even thorough planning misses things. The confidence gate catches vagueness at the last possible moment — before a worker wastes time on a poorly-scoped task. It only interrupts the human when it genuinely needs to, not as a formality.
 
-Show current decomposition level:
-- If project approved → show epic breakdown
-- If epic approved → show feature breakdown  
-- If feature approved → show atom breakdown
+## Horizon-Based Planning
 
-### Command: forge approve
+Instead of planning all atoms upfront or one feature at a time, Forge plans in **time-horizon batches:**
 
-Approve current decomposition level and advance:
-- Project approved → start epic decomposition
-- Epic approved → start feature decomposition
-- Feature approved → start atom execution
+### How It Works
+1. User specifies: "plan for 24 hours" (or 5 hours, 3 days, 1 week, etc.)
+2. Forge estimates capacity: ~8-12 atoms per 5-hour token window
+3. Forge selects features that fit the horizon (in dependency order)
+4. For each feature in the batch:
+   a. Read the feature spec
+   b. Ask clarifying questions (batched — all questions for all features presented together or in sequence)
+   c. Generate atoms after answers received
+5. Present complete atom plan for the batch
+6. User approves once → execution begins autonomously
 
-### Decomposition Flow
+### Estimation
+- Simple atom (create file, add config): ~5-10 min
+- Medium atom (implement function + tests): ~10-20 min
+- Complex atom (multi-file feature + integration): ~20-30 min
+- Per 5-hour token window: ~8-12 atoms
+- Per 24 hours (multiple windows): ~30-50 atoms
+- Per week: ~150-250 atoms
 
-1. Spawn planner sub-agent with appropriate prompt
-2. Planner reads parent level, creates child level breakdown
-3. Present breakdown to human for review
-4. Human can modify or approve
-5. If approved, advance to next level or execution
+## Execution Pipeline
 
-### Execution Flow
+### Per-Atom Flow
+```
+CONFIDENCE GATE → SPAWN WORKER → BUILD → COMPILE → TEST → COMMIT → DONE
+                                           ↓ fail      ↓ fail
+                                        FIX (2x)    FIX (2x)
+                                           ↓ still      ↓ still
+                                        ESCALATE    ESCALATE
+```
 
-1. Find next ready atom (dependencies met)
-2. Spawn worker sub-agent with context stack
-3. Worker implements atom, compiles, tests, commits
-4. Mark atom complete and advance queue
-5. When feature complete → integration gate
-6. When epic complete → integration gate
+### Per-Feature Gate
+After all atoms in a feature complete:
+- Run full test suite
+- Start the application (if applicable)
+- Verify feature works end-to-end
+- Create PR for the feature
+- Continue to next feature automatically (no human approval needed)
+
+### Per-Epic Gate
+After all features in an epic complete:
+- Full build from clean state
+- Cross-feature integration tests
+- Summary report to human
+
+### Token Budget Management
+- Track token consumption per rolling 5-hour window
+- When rate-limited: pause execution, set cron job to auto-resume when window resets
+- Never start an atom that can't be completed in remaining budget
+- Runs 24/7 with naps — not 9-to-5 with hard stops
 
 ## State Management
 
 ### Directory Structure
-
 ```
 forge/projects/{project-id}/
-├── project.md                 # Project plan
-├── state.json                 # Project state
+├── project.md
+├── state.json
 ├── epics/
-│   ├── 01-auth/
-│   │   ├── epic.md           # Epic plan
-│   │   ├── state.json        # Epic state
+│   ├── 01-{epic}/
+│   │   ├── epic.md
 │   │   ├── features/
-│   │   │   ├── 01-email/
+│   │   │   ├── 01-{feature}/
 │   │   │   │   ├── feature.md
 │   │   │   │   ├── atoms/
-│   │   │   │   │   ├── 001-table.md
+│   │   │   │   │   ├── 001-{atom}.md
 │   │   │   │   │   └── ...
 │   │   │   │   └── report.md
 │   │   │   └── ...
@@ -141,26 +183,38 @@ forge/projects/{project-id}/
 ```
 
 ### State JSON Schema
-
 ```jsonc
 {
-  "projectId": "recipe-app",
+  "projectId": "measure-calc",
   "status": "executing",
   "created": "2026-02-17T10:00:00Z",
+  "horizon": {
+    "requested": "24 hours",
+    "featuresPlanned": 9,
+    "atomsPlanned": 22,
+    "approvedAt": "2026-02-17T11:00:00Z"
+  },
   "scales": {
     "project": "approved",
-    "epics": { "total": 5, "approved": 2 },
-    "features": { "total": 18, "approved": 6 },
-    "atoms": { "total": 47, "done": 12, "running": 1 }
+    "epics": { "total": 4, "approved": 4 },
+    "features": { "total": 9, "planned": 9, "done": 3 },
+    "atoms": { "total": 22, "done": 12, "running": 1, "failed": 0, "blocked": 0, "queued": 9 }
   },
   "currentWork": {
-    "epic": "01-auth",
-    "feature": "01-email-login", 
-    "atom": "003-login-endpoint",
-    "workerSession": "sub-abc123"
+    "epic": "02-engine",
+    "feature": "01-fraction-types",
+    "atom": "003-add-subtract",
+    "workerSession": "sub-abc123",
+    "confidenceScore": { "project": "HIGH", "epic": "HIGH", "feature": "HIGH", "implementation": "HIGH" }
+  },
+  "tokenBudget": {
+    "currentWindowStart": "2026-02-17T10:00:00Z",
+    "estimatedTokensUsed": 850000,
+    "rateLimited": false,
+    "resumeAt": null
   },
   "git": {
-    "repo": "/path/to/project",
+    "repo": "/home/zavdielx/code/measure-calc",
     "baseBranch": "main",
     "forgeBranch": "forge/build"
   }
@@ -169,92 +223,68 @@ forge/projects/{project-id}/
 
 ## Sub-Agent Orchestration
 
-### Planner Sub-Agents
-
-Spawned for decomposition with prompts from `prompts/`:
-- `planner-project.md` - Project → Epics
-- `planner-epic.md` - Epic → Features  
-- `planner-feature.md` - Feature → Atoms
-
 ### Worker Sub-Agents
-
-Spawned for execution with:
-- `prompts/worker.md` - Standard worker instructions
-- Context stack (4 files)
+Spawned for each atom with:
+- `prompts/worker.md` system prompt
+- Context stack (project + epic + feature + atom files)
 - Target repository path
+- Timeout sized to atom complexity (10-30 min)
 
 ### Reviewer Sub-Agents
-
-Spawned for integration gates with:
-- `prompts/reviewer.md` - Review instructions
-- Completed work artifacts
+Spawned at feature integration gates with:
+- `prompts/reviewer.md` system prompt
+- All completed atom artifacts
+- Test results
 
 ## Communication Patterns
 
-### Progress Updates
-Send via cron or main session:
-- Daily progress summaries  
-- Completion milestones
-- Budget alerts
+### During Planning (interactive)
+- Clarifying questions per feature
+- Plan summary for approval
+- Decision requests for ambiguous architecture choices
 
-### Decision Requests
-Block on human input for:
-- Architecture choices at epic level
-- UX decisions at feature level
-- Ambiguous implementation details at atom level
+### During Execution (minimal interruption)
+- Progress updates via cron (every 30-60 min or at milestones)
+- Feature completion notifications with PR link
+- **Only interrupt for:** confidence gate LOW scores, worker failures after 2 retries, external blockers
 
-### Escalations
-When workers fail after retries:
-- Context about what failed
-- Why it can't auto-resolve
-- What human action is needed
-
-## Library Functions
-
-Use bash helpers from `lib/`:
-
-```bash
-# State management
-source lib/state.sh
-init_project "recipe-app"
-get_state "recipe-app" "status"
-set_state "recipe-app" "status" "executing"
-
-# Queue management  
-source lib/queue.sh
-next_atom "recipe-app"
-mark_atom "recipe-app" "001-users-table.md" "done"
+### Progress Update Format
+```
+🔥 Forge — Progress Update
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+12/22 atoms done (55%) | Feature 3/9
+Currently: Recipe CRUD endpoints
+Next pause: Feature integration gate (~20 min)
+Token budget: 60% remaining this window
+No decisions needed. Pipeline flowing.
 ```
 
-## File Templates
+## Human Touchpoints Summary
 
-All plans follow templates from `templates/`:
-- `project.md` - Project level template
-- `epic.md` - Epic level template
-- `feature.md` - Feature level template  
-- `atom.md` - Atom level template (most critical)
-- `decision.md` - Human decision request template
+1. **Intake** — Describe what to build, answer clarifying questions
+2. **Plan review** — Approve epics, features (interactive)
+3. **Set horizon** — "Plan for X time"
+4. **Feature clarification** — Answer questions for each feature in batch
+5. **Approve batch** — One approval, then hands-off
+6. **Confidence gate interrupts** — Only when an atom is genuinely unclear
+7. **Integration testing** — Optional, at feature PR boundaries
+8. **Blockers** — Only genuine failures
 
-## Success Metrics
+Everything else is autonomous.
 
-- Projects complete end-to-end without human coding
-- Each atom takes ≤30 minutes of Claude time
-- Compile-test-commit cycle at every atom
-- Human reviews scale-appropriate decisions only
-- Budget tracking prevents overruns
-
----
-
-## Quick Start Example
+## Quick Start
 
 ```
-User: "I want to build a recipe sharing app"
-→ forge new
-→ Intake conversation (goals, tech stack, MVP)  
-→ Create project.md
-→ forge plan → Show epic breakdown
-→ forge approve → Start feature decomposition
-→ forge status → Monitor progress
+User: "Let's build a calculator app"
+→ forge new → intake questions → project.md created
+→ Epics presented → approved
+→ Features presented → approved
+→ "forge plan 24 hours" → clarifying questions for each feature
+→ User answers all questions
+→ Atoms generated for entire batch
+→ "forge approve" → execution begins
+→ [autonomous from here — atoms churn, features complete, PRs created]
+→ Progress updates arrive periodically
+→ Forge naps during token cooldowns, auto-resumes
+→ "Batch complete!" or "forge plan" for next horizon
 ```
-
-The system handles the complexity of multiscale construction while keeping humans in the loop at the right level of detail.
