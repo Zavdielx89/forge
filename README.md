@@ -2,6 +2,8 @@
 
 > *From the macroscopic vision down to the atomic unit of work — then back up to working software.*
 
+<a href="https://www.buymeacoffee.com/zavdielx"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=zavdielx&button_colour=FF5F5F&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" /></a>
+
 Forge is an [OpenClaw](https://github.com/openclaw/openclaw) skill that decomposes software projects across multiple scales (Project → Epics → Features → Atoms) then executes those atoms autonomously with AI worker sub-agents. Planning is interactive. Execution is autonomous.
 
 ## How It Works
