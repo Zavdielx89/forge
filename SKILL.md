@@ -358,6 +358,20 @@ When the user issues a forge command in the main session, handle it directly:
 1. Set the atom as currentWork, status to 'executing'
 2. Write state.json — cron will pick it up
 
+### `forge heartbeat <minutes>`
+1. Update the forge-executor cron job's `schedule.everyMs` to `minutes * 60000`
+2. Use `cron update` with the job ID and patch `{ "schedule": { "kind": "every", "everyMs": <ms> } }`
+3. Reply: "Forge heartbeat set to every {minutes} minutes."
+4. Default is 3 minutes. Useful for dialing back to 10-15 min during long runs.
+
+### `forge silence <hours>`
+1. Disable the forge-executor cron: `cron update` with patch `{ "enabled": false }`
+2. Create a one-shot cron to re-enable it after the specified hours:
+   - `cron add` with `schedule: { kind: "at", at: "<ISO timestamp now + hours>" }`
+   - payload: `{ kind: "agentTurn", message: "Re-enable the forge-executor cron job. Use cron list to find the forge-executor job, then cron update with patch { enabled: true }. Send a Slack message to user:U08TGBKN163: '🔥 Forge silence period ended. Resuming notifications.'" }`
+3. Reply: "Forge silenced for {hours} hours. Execution continues, notifications paused. Will resume at {time}."
+4. Note: execution still runs during silence — only Slack notifications are suppressed. Workers still spawn and commit.
+
 ## Quick Start
 
 ```

@@ -122,6 +122,8 @@ forge resume                      # Resume execution
 forge continue                    # Continue past integration gate
 forge skip <atom-id>              # Skip a stuck atom
 forge retry <atom-id>             # Retry a failed atom
+forge heartbeat <minutes>         # Set check interval (default: 3 min)
+forge silence <hours>             # Mute notifications for N hours (execution continues)
 
 # Decision Support
 forge decide <id> <answer>        # Answer a pending decision
