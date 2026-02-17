@@ -1,0 +1,45 @@
+# Forge .gitignore
+
+# Project data - these contain sensitive/personal info
+projects/
+
+# Temporary files
+*.tmp
+*.temp
+temp_*
+
+# Editor files  
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node modules if any JS tooling is added
+node_modules/
+
+# Python cache if any Python tooling is added  
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files
+*.bak
+*.backup
+
+# Test artifacts
+test-results/
+coverage/
+
+# Build artifacts (if any)
+dist/
+build/
+out/
