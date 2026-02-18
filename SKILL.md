@@ -23,6 +23,7 @@ Activate when the user wants to:
 ## Command Set
 
 ```bash
+forge init <path>                 # Adopt an existing project (discovery + context generation)
 forge new                         # Start a new project (intake)
 forge plan <horizon>              # Plan atoms for a time horizon ("5 hours", "3 days", "1 week")
 forge status                      # Show current project status
@@ -358,6 +359,91 @@ Everything else is autonomous.
 ## Command Implementation (Main Session)
 
 When the user issues a forge command in the main session, handle it directly:
+
+### `forge init <path>`
+Adopt an existing codebase into Forge's scale hierarchy. This is a multi-step interactive process.
+
+#### Step 1: Discovery (Broad Scan)
+Read the project structure — don't read every file, read *structure*:
+1. File tree: `find <path>/src -type f | head -200` (or equivalent)
+2. Config files: `package.json`, `tsconfig.json`, `vite.config.*`, `docker-compose.*`, `.env.example`, etc.
+3. README if it exists
+4. Git log: `git log --oneline -20` for recent history
+5. Entry points: `src/main.*`, `src/App.*`, `src/index.*`
+6. Directory structure at top 2 levels of `src/`
+
+**Goal:** Understand the tech stack, frameworks, patterns, and major modules without burning tokens reading implementation details.
+
+#### Step 2: Architecture Extraction
+From the broad scan, identify:
+- **Tech stack**: language, framework, build tool, test runner, CSS approach
+- **Major modules/domains**: routing, state management, API layer, UI components, etc.
+- **Conventions**: file naming, directory structure, import patterns
+- **External dependencies**: key libraries and their roles
+
+Present this to the human as a summary:
+> "Here's what I see: Vue 3 + TypeScript, Vite, Pinia for state, PrimeVue components, Vitest for testing. Major areas: [list]. Does this look right? What am I missing?"
+
+#### Step 3: Decompose into Epics and Features (Retrospective)
+Map what exists into Forge's hierarchy:
+1. **Epics** = major architectural boundaries (e.g., "Authentication", "Data Layer", "UI Shell")
+2. **Features** = individual capabilities within each epic (e.g., "Login Form", "JWT Token Management")
+3. **Don't create atoms for existing code** — atoms are for *new work only*
+
+For each feature, do a **targeted deep read** — read the 1-3 key files that define that feature's behavior. Not every file, just enough to write an accurate feature.md.
+
+Mark all discovered features as `status: complete` in state.json.
+
+#### Step 4: Build Context Files
+Create the full Forge project directory:
+```
+forge/projects/{project-id}/
+├── project.md              ← Tech stack, architecture, conventions, goals
+├── state.json              ← All existing work marked complete
+├── epics/
+│   ├── 01-{epic}/
+│   │   ├── epic.md         ← What this epic covers, integration points
+│   │   ├── features/
+│   │   │   ├── 01-{feature}/
+│   │   │   │   └── feature.md  ← What exists, key files, behavior
+│   │   │   └── ...
+│   │   └── ...
+│   └── ...
+```
+
+**project.md** must include:
+- Project overview and purpose
+- Tech stack with versions
+- Directory structure and conventions
+- Build/test/run commands
+- Key architectural decisions
+- What's already built (summary)
+
+**feature.md** for existing features must include:
+- What the feature does
+- Key files implementing it
+- Dependencies on other features
+- Any known issues or tech debt
+
+#### Step 5: State Initialization
+Create state.json with:
+- `status: "idle"` (no active pipeline)
+- All discovered features/epics in `completedFeatures`/`completedEpics`
+- Empty `atomQueue`, null `nextAtom`
+- `scales` reflecting the discovered totals with all marked done
+- Git repo path and branch info
+
+#### Step 6: Transition to Planning
+Present the completed discovery to the human:
+> "I've mapped your project into [N] epics and [M] features. Here's the breakdown: [summary]. What do you want to build next?"
+
+From here, the normal `forge plan <horizon>` flow takes over. New epics/features get added to the existing hierarchy, and new atoms are generated only for the new work — with full context of what already exists.
+
+#### Key Principles
+- **Don't read every file.** Read structure, configs, entry points, and key files. Infer the rest.
+- **Ask the human.** After discovery, confirm the architecture. They know things the code doesn't show.
+- **Existing code = context, not work.** Feature.md files for existing code are *reference material* for new atoms.
+- **Respect conventions.** New atoms should follow the patterns discovered in existing code.
 
 ### `forge continue` / `forge approve`
 1. Read state.json

@@ -119,6 +119,24 @@ At **manual gates**, the human receives:
 - Regression checklist for previously completed features
 - Say `forge continue` to resume
 
+### Adopting Existing Projects (`forge init`)
+Forge can adopt an existing codebase — not just greenfield projects:
+
+```
+forge init /path/to/existing/project
+  → Broad scan: file tree, configs, README, git history
+  → Architecture extraction: stack, patterns, modules
+  → Interactive confirmation: "Here's what I see — correct?"
+  → Decompose into Epics → Features (retrospective)
+  → Build context files (project.md, epic.md, feature.md)
+  → All existing work marked as complete
+  → "What do you want to build next?" → normal forge plan flow
+```
+
+**Key principle:** Existing code is *context*, not *work*. Forge reads structure and key files to understand what's built, then generates vertical context so new atoms can build on top of it intelligently.
+
+Discovery is **token-efficient** — reads file trees and configs first, does targeted deep reads only on key files, and asks the human to confirm before proceeding.
+
 ### Token Budget Management
 - Tracks consumption per rolling 5-hour window (Claude Max)
 - When rate-limited: pauses, sets cron to auto-resume when window resets
@@ -129,6 +147,7 @@ At **manual gates**, the human receives:
 
 ```bash
 # Project Lifecycle
+forge init <path>                 # Adopt an existing project into Forge
 forge new                         # Start a new project (intake)
 forge plan <horizon>              # Plan atoms for a time horizon
 forge approve                     # Approve plan, begin execution
