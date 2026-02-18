@@ -155,17 +155,48 @@ The executor prompt must include:
 When implementing `forge pause`, disable the cron. `forge resume` re-enables it.
 When implementing `forge status`, read state.json and format a progress report.
 
+### FORGE_STATUS.md — Compaction Persistence
+The main session loses all context on compaction. `FORGE_STATUS.md` is the handshake file that survives:
+
+- **Written by the cron executor** after every state change (atom completion, status transition, worker spawn)
+- **Read by the main session** on startup (listed in AGENTS.md as a required read)
+- **Contains**: project name, status, progress, current worker, queue, completed epics, cron job ID
+
+#### State Machine
+Valid states: `idle` → `active` → `complete` | `error` | `awaiting-integration` | `needs-decision` | `paused`
+- **idle**: No pipeline running. Cron disabled.
+- **active**: Pipeline executing. Cron spawns workers on each tick.
+- **complete**: All atoms done. Cron self-disabled.
+- **awaiting-integration**: Manual gate — waiting for human `forge continue`.
+- **needs-decision**: Confidence gate LOW — waiting for `forge decide`.
+- **paused**: Human paused via `forge pause`.
+- **error**: Worker failed 2x, needs intervention.
+
+### Cron Self-Disable on Completion
+When the pipeline completes (all atoms done, queue empty), the cron executor **disables itself** to prevent token waste:
+
+1. Detects `nextAtom: null` and empty `atomQueue` (or reads `status: complete` from state.json)
+2. Updates FORGE_STATUS.md with `status: complete`
+3. Calls `cron update` with `patch: { enabled: false }` using its own job ID
+4. Sends final Slack notification: "Pipeline complete. Cron disabled."
+5. Zero token leak — no more ticks until re-enabled
+
+The cron executor prompt **must include its own job ID** so it can self-disable. Pass it as `CRON JOB ID: <id>` in the prompt.
+
+To restart for a new Forge run: `forge resume` re-enables the cron, or `forge new` creates a fresh pipeline.
+
 ### Cron Executor State Machine
 Each cron tick follows this sequence:
 1. **Read state.json** — ground truth for pipeline state
-2. **Check status** — paused/awaiting-integration/rate-limited/executing
+2. **Check status & self-disable** — if `complete`: update FORGE_STATUS.md, disable cron, notify Slack, stop. If paused/awaiting-integration/needs-decision: notify and stop. If executing: continue.
 3. **Check active workers** — if worker running, exit quietly (no spam)
 4. **Verify last atom** — check git log, update completedAtoms
 5. **Feature boundary check** — if last atom of feature, run tests, notify main, pause for integration
-6. **Determine next atom** — from queue, or completion if done
+6. **Completion detection** — if nextAtom is null and queue empty: set status `complete`, self-disable cron, notify Slack, stop.
 7. **Confidence gate** — score 4 dimensions, escalate LOW to human via main session
 8. **Spawn worker** — sub-agent with full vertical context
-9. **Status update** — brief progress line to main session
+9. **Update FORGE_STATUS.md** — write current state for main session persistence
+10. **Status update** — brief progress line to Slack
 
 ### Main Session Integration
 The cron executor communicates with the human via `sessions_send` to the main session:
