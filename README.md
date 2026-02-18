@@ -70,21 +70,39 @@ Execution is powered by an OpenClaw cron job that fires every 3 minutes:
 
 - **Survives session compaction** — cron is infrastructure, not session state
 - **Self-healing** — if the main session loses context, cron keeps dispatching workers
-- **Reports to main** — uses `sessions_send` to push status updates to the human's chat
+- **Self-disabling** — disables its own cron job on pipeline completion (zero token leak)
+- **Reports to human** — pushes status updates to Slack/Telegram/etc.
 - **Created automatically** by `forge approve` — each project gets its own cron
 
 ```
 ┌─────────────────────────────────────────────┐
 │  Cron (every 3 min)                         │
 │  ├─ Read state.json                         │
+│  ├─ If complete → self-disable, notify, stop│
 │  ├─ Check for active workers                │
 │  ├─ Verify last atom committed              │
 │  ├─ Feature/epic boundary gates             │
+│  ├─ Completion detection → self-disable     │
 │  ├─ Confidence gate on next atom            │
 │  ├─ Spawn worker sub-agent                  │
-│  └─ Status update → main session → human    │
+│  ├─ Update FORGE_STATUS.md                  │
+│  └─ Status update → human                   │
 └─────────────────────────────────────────────┘
 ```
+
+### FORGE_STATUS.md — Compaction Persistence
+The main session loses all context on compaction. `FORGE_STATUS.md` bridges the gap:
+
+- **Written by the cron executor** after every state change
+- **Read by the main session** on startup (listed in AGENTS.md)
+- **State machine**: `idle` → `active` → `complete` | `error` | `awaiting-integration` | `needs-decision` | `paused`
+
+When the cron executor detects completion (all atoms done, queue empty), it:
+1. Sets `status: complete` in state.json
+2. Updates FORGE_STATUS.md
+3. Disables its own cron job via `cron update` with `{ enabled: false }`
+4. Sends final notification to the human
+5. No more ticks until re-enabled via `forge resume` or `forge new`
 
 ### Integration Gates
 
@@ -214,7 +232,7 @@ planning → approved → executing ←─────────────�
                          └──────────────────────┘
                          
 executing → rate-limited → (auto-resume after cooldown)
-executing → complete (all atoms done)
+executing → complete (all atoms done → cron self-disables)
 executing → paused (forge pause) → executing (forge resume)
 ```
 
